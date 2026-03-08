@@ -423,7 +423,7 @@ export async function publishToSnack(spec: AppSpec, siteData: SiteData): Promise
 
   const payload = {
     manifest: {
-      sdkVersion: '52.0.0',
+      sdkVersion: '54.0.0',
       name: spec.appName,
       slug: `${spec.appName.toLowerCase().replace(/[^a-z0-9]/g, '-')}-${Date.now()}`,
       description: spec.tagline,
@@ -436,9 +436,9 @@ export async function publishToSnack(spec: AppSpec, siteData: SiteData): Promise
     },
     dependencies: {
       'react': '18.3.1',
-      'react-native': '0.76.5',
-      'expo': '~52.0.0',
-      'react-native-webview': '13.10.5',
+      'react-native': '0.77.0',
+      'expo': '~54.0.0',
+      'react-native-webview': '13.12.5',
     },
   }
 
