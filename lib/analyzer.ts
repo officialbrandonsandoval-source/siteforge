@@ -29,32 +29,58 @@ export interface Tab {
 export async function analyzeSite(siteData: SiteData): Promise<AppSpec> {
   const client = new Anthropic()
 
-  const prompt = `You are a mobile app architect. Analyze this website screenshot and metadata, then design a native mobile app structure for it.
+  const contextParts: Anthropic.MessageParam['content'] = []
 
-Website: ${siteData.url}
+  // Add og:image if available for visual context
+  if (siteData.ogImage) {
+    try {
+      const imgRes = await fetch(siteData.ogImage, { signal: AbortSignal.timeout(8000) })
+      if (imgRes.ok) {
+        const contentType = imgRes.headers.get('content-type') || 'image/jpeg'
+        const validTypes = ['image/jpeg', 'image/png', 'image/gif', 'image/webp']
+        const mimeType = validTypes.find(t => contentType.includes(t.split('/')[1])) || 'image/jpeg'
+        const buffer = await imgRes.arrayBuffer()
+        const base64 = Buffer.from(buffer).toString('base64')
+        contextParts.push({
+          type: 'image',
+          source: {
+            type: 'base64',
+            media_type: mimeType as 'image/jpeg' | 'image/png' | 'image/gif' | 'image/webp',
+            data: base64,
+          },
+        })
+      }
+    } catch {
+      // Skip image if unavailable
+    }
+  }
+
+  const prompt = `You are a mobile app architect. Analyze this website and design a native mobile app.
+
+URL: ${siteData.url}
 Title: ${siteData.title}
 Description: ${siteData.description}
-Navigation links: ${JSON.stringify(siteData.navLinks)}
-Page sections: ${JSON.stringify(siteData.sections)}
-Detected colors: ${siteData.colors.slice(0, 5).join(', ')}
+Theme color: ${siteData.themeColor || 'not specified'}
+Colors found: ${siteData.colors.slice(0, 6).join(', ')}
+Navigation: ${JSON.stringify(siteData.navLinks.slice(0, 6))}
+Page sections: ${JSON.stringify(siteData.sections.slice(0, 6))}
 
-Look at the screenshot and return a JSON app specification. Be specific to this website's actual content and purpose.
+Design a native mobile app for this website. Return ONLY valid JSON:
 
-Return ONLY valid JSON in this exact structure:
 {
-  "appName": "short app name (2-3 words max)",
-  "tagline": "one-line description of what the app does",
-  "primaryColor": "#hexcolor (dominant brand color from the site)",
-  "backgroundColor": "#hexcolor (dark or light background)",
-  "textColor": "#hexcolor (main text color)",
-  "accentColor": "#hexcolor (call-to-action or highlight color)",
+  "appName": "2-3 word app name specific to this brand",
+  "tagline": "one line — what the app lets you do",
+  "primaryColor": "#hexcolor from their brand",
+  "backgroundColor": "#0a0a0a or #ffffff depending on brand",
+  "textColor": "#f4f4f5 or #111111 depending on background",
+  "accentColor": "#hexcolor for buttons and highlights",
   "screens": [
     {
       "name": "Home",
-      "title": "screen title",
+      "title": "screen display title",
       "type": "home",
-      "content": "description of what this screen shows and key UI elements",
-      "sourceUrl": "optional URL for this specific section"
+      "content": "what this screen shows — specific to this brand",
+      "sourceUrl": "${siteData.url}"
     }
   ],
   "bottomTabs": [
@@ -63,41 +89,23 @@ Return ONLY valid JSON in this exact structure:
 }
 
 Rules:
-- 3-5 screens max
-- 3-4 bottom tabs (matching the screens)
-- Icon names must be valid Expo vector icons (home, search, person, settings, heart, star, bell, list, grid, info)
-- Make screens specific to this site's actual content
-- Colors should match the site's brand exactly`
+- 3-5 screens based on the actual site structure
+- 3-4 bottom tabs matching screens
+- Icon names: home, search, person, settings, heart, star, bell, list, grid, info, restaurant, fitness, book, cart
+- Make it specific to THIS brand — not generic
+- Colors must match their actual brand`
+
+  contextParts.push({ type: 'text', text: prompt })
 
   const response = await client.messages.create({
     model: 'claude-sonnet-4-6',
     max_tokens: 1500,
-    messages: [
-      {
-        role: 'user',
-        content: [
-          {
-            type: 'image',
-            source: {
-              type: 'base64',
-              media_type: 'image/jpeg',
-              data: siteData.screenshot,
-            },
-          },
-          {
-            type: 'text',
-            text: prompt,
-          },
-        ],
-      },
-    ],
+    messages: [{ role: 'user', content: contextParts }],
   })
 
   const text = response.content[0].type === 'text' ? response.content[0].text : ''
-  
-  // Extract JSON from response
   const jsonMatch = text.match(/\{[\s\S]*\}/)
-  if (!jsonMatch) throw new Error('Failed to extract app spec from AI response')
-  
+  if (!jsonMatch) throw new Error('Failed to parse app spec from AI response')
+
   return JSON.parse(jsonMatch[0]) as AppSpec
 }

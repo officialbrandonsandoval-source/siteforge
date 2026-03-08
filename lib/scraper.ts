@@ -1,97 +1,90 @@
-import puppeteer from 'puppeteer'
+import * as cheerio from 'cheerio'
 
 export interface SiteData {
   url: string
   title: string
   description: string
-  screenshot: string // base64
+  ogImage?: string
   colors: string[]
   navLinks: { label: string; href: string }[]
   sections: { heading: string; content: string }[]
-  logoUrl?: string
   faviconUrl?: string
+  themeColor?: string
 }
 
 export async function scrapeSite(url: string): Promise<SiteData> {
-  const browser = await puppeteer.launch({
-    headless: true,
-    args: ['--no-sandbox', '--disable-setuid-sandbox'],
+  const res = await fetch(url, {
+    headers: {
+      'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1',
+      'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+      'Accept-Language': 'en-US,en;q=0.5',
+    },
+    signal: AbortSignal.timeout(15000),
   })
 
-  try {
-    const page = await browser.newPage()
-    await page.setViewport({ width: 390, height: 844 })
-    await page.goto(url, { waitUntil: 'networkidle2', timeout: 20000 })
+  if (!res.ok) throw new Error(`Failed to fetch site: ${res.status}`)
 
-    // Screenshot
-    const screenshotBuffer = await page.screenshot({ fullPage: false, type: 'jpeg' })
-    const screenshot = Buffer.from(screenshotBuffer).toString('base64')
+  const html = await res.text()
+  const $ = cheerio.load(html)
 
-    // Title + description
-    const title = await page.title()
-    const description = await page.$eval(
-      'meta[name="description"]',
-      (el) => el.getAttribute('content') || ''
-    ).catch(() => '')
+  // Meta
+  const title = $('title').text().trim() || $('meta[property="og:title"]').attr('content') || ''
+  const description =
+    $('meta[name="description"]').attr('content') ||
+    $('meta[property="og:description"]').attr('content') ||
+    ''
+  const ogImage =
+    $('meta[property="og:image"]').attr('content') ||
+    $('meta[name="twitter:image"]').attr('content') ||
+    undefined
+  const themeColor = $('meta[name="theme-color"]').attr('content') || undefined
+  const faviconUrl =
+    $('link[rel="icon"]').attr('href') ||
+    $('link[rel="shortcut icon"]').attr('href') ||
+    '/favicon.ico'
 
-    // Nav links
-    const navLinks = await page.$$eval('nav a, header a', (links) =>
-      links
-        .map((a) => ({
-          label: (a as HTMLAnchorElement).innerText?.trim() || '',
-          href: (a as HTMLAnchorElement).href || '',
-        }))
-        .filter((l) => l.label.length > 0 && l.label.length < 30)
-        .slice(0, 8)
-    ).catch(() => [])
+  // Nav links
+  const navLinks: { label: string; href: string }[] = []
+  $('nav a, header a').each((_, el) => {
+    const label = $(el).text().trim()
+    const href = $(el).attr('href') || ''
+    if (label && label.length < 30 && label.length > 1 && !href.startsWith('tel:') && !href.startsWith('mailto:')) {
+      const absHref = href.startsWith('http') ? href : `${new URL(url).origin}${href.startsWith('/') ? href : '/' + href}`
+      if (!navLinks.find(l => l.label === label)) {
+        navLinks.push({ label, href: absHref })
+      }
+    }
+  })
 
-    // Sections — headings + first paragraph
-    const sections = await page.$$eval('h1, h2, h3', (headings) =>
-      headings
-        .map((h) => {
-          const heading = (h as HTMLElement).innerText?.trim() || ''
-          const next = h.nextElementSibling
-          const content = next ? (next as HTMLElement).innerText?.trim().slice(0, 200) || '' : ''
-          return { heading, content }
-        })
-        .filter((s) => s.heading.length > 0 && s.heading.length < 100)
-        .slice(0, 8)
-    ).catch(() => [])
+  // Content sections
+  const sections: { heading: string; content: string }[] = []
+  $('h1, h2, h3').each((_, el) => {
+    const heading = $(el).text().trim()
+    if (!heading || heading.length > 100) return
+    const next = $(el).next()
+    const content = next.text().trim().slice(0, 200)
+    sections.push({ heading, content })
+  })
 
-    // Logo
-    const logoUrl = await page.$eval(
-      'img[src*="logo"], header img, nav img',
-      (img) => (img as HTMLImageElement).src || ''
-    ).catch(() => undefined)
+  // Color extraction from inline styles + bg colors
+  const colors: string[] = []
+  if (themeColor) colors.push(themeColor)
 
-    // Favicon
-    const faviconUrl = await page.$eval(
-      'link[rel="icon"], link[rel="shortcut icon"]',
-      (el) => (el as HTMLLinkElement).href || ''
-    ).catch(() => undefined)
+  // Try to get brand colors from CSS custom properties or inline styles
+  const styleContent = $('style').text()
+  const hexColors = styleContent.match(/#[0-9a-fA-F]{6}/g) || []
+  const uniqueColors = [...new Set(hexColors)].slice(0, 10)
+  colors.push(...uniqueColors)
 
-    // CSS color extraction (dominant brand colors)
-    const colors = await page.evaluate(() => {
-      const colorCounts: Record<string, number> = {}
-      document.querySelectorAll('*').forEach((el) => {
-        const style = window.getComputedStyle(el)
-        const bg = style.backgroundColor
-        const color = style.color
-        if (bg && bg !== 'rgba(0, 0, 0, 0)' && bg !== 'transparent') {
-          colorCounts[bg] = (colorCounts[bg] || 0) + 1
-        }
-        if (color) {
-          colorCounts[color] = (colorCounts[color] || 0) + 1
-        }
-      })
-      return Object.entries(colorCounts)
-        .sort((a, b) => b[1] - a[1])
-        .slice(0, 5)
-        .map(([color]) => color)
-    }).catch(() => [])
-
-    return { url, title, description, screenshot, colors, navLinks, sections, logoUrl, faviconUrl }
-  } finally {
-    await browser.close()
+  return {
+    url,
+    title,
+    description,
+    ogImage,
+    colors: colors.slice(0, 8),
+    navLinks: navLinks.slice(0, 8),
+    sections: sections.slice(0, 8),
+    faviconUrl,
+    themeColor,
   }
 }
