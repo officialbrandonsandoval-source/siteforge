@@ -6,12 +6,43 @@ export interface SiteData {
   description: string
   ogImage?: string
   heroImages: string[]       // Real brand photography from the site
-  logoUrl?: string
+  logoUrl?: string           // Detected logo/wordmark image
   colors: string[]
   themeColor?: string
   navLinks: { label: string; href: string }[]
   sections: { heading: string; content: string }[]
   faviconUrl?: string
+}
+
+/** Detect if an image is likely a logo/wordmark rather than photography */
+function isLikelyLogo(src: string, alt: string, width: number, height: number): boolean {
+  const srcLower = src.toLowerCase()
+  const altLower = alt.toLowerCase()
+
+  // SVGs are always logos
+  if (/\.svg(\?|$)/i.test(src)) return true
+
+  // Path/filename contains logo-related keywords
+  if (/logo|wordmark|brand|emblem|crest/i.test(srcLower)) return true
+  if (/logo|wordmark|brand/i.test(altLower)) return true
+
+  // Square and small — likely an icon or logo
+  if (width > 0 && height > 0 && width < 300 && Math.abs(width - height) / Math.max(width, height) < 0.15) return true
+
+  // Filename is just the brand name (e.g., "sugarfish.jpg", "nobu.png")
+  const filename = srcLower.split('/').pop()?.split('?')[0] || ''
+  if (/^[a-z\-_]+\.(jpe?g|png|webp|gif)$/i.test(filename)) {
+    const name = filename.replace(/\.(jpe?g|png|webp|gif)$/i, '')
+    // Very short single-word filenames are often brand/logo files
+    if (name.length <= 12 && !name.includes('-') && !name.includes('_')) return true
+  }
+
+  return false
+}
+
+/** Check if an image path looks like real photography */
+function isLikelyPhotography(src: string): boolean {
+  return /\/(images|media|photos|gallery|wp-content\/uploads|assets\/img)\//i.test(src)
 }
 
 export async function scrapeSite(url: string): Promise<SiteData> {
@@ -52,12 +83,12 @@ export async function scrapeSite(url: string): Promise<SiteData> {
     '/favicon.ico'
   )
 
-  // ── Logo ──────────────────────────────────────────────────────────────
-  const logoUrl = toAbsolute(
+  // ── Logo detection ──────────────────────────────────────────────────
+  const logoSrc = toAbsolute(
     $('header img, nav img, .logo img, [class*="logo"] img').first().attr('src') || ''
   ) || undefined
 
-  // ── Brand photography — pull ALL meaningful images ────────────────────
+  // ── Collect ALL candidate images ────────────────────────────────────
   const imageSet = new Set<string>()
 
   // 1. og:image (usually the best hero)
@@ -70,10 +101,8 @@ export async function scrapeSite(url: string): Promise<SiteData> {
     const src = $(el).attr('src') || ''
     const width = parseInt($(el).attr('width') || '0')
     const height = parseInt($(el).attr('height') || '0')
-    // Skip tiny images and data URIs
     if (src.startsWith('data:')) return
     if (src.includes('icon') && (width < 64 || !width)) return
-    if (src.includes('logo') && height && height < 80) return
     const abs = toAbsolute(src)
     if (abs && !abs.includes('pixel') && !abs.includes('1x1')) {
       imageSet.add(abs)
@@ -104,10 +133,40 @@ export async function scrapeSite(url: string): Promise<SiteData> {
     if (src && !src.startsWith('data:')) imageSet.add(toAbsolute(src))
   })
 
-  // Filter to images that look like real photography (jpg/png/webp, not svg/gif)
-  const heroImages = [...imageSet]
-    .filter(src => /\.(jpe?g|png|webp)(\?|$)/i.test(src))
-    .filter(src => !src.includes('icon') && !src.includes('sprite') && !src.includes('placeholder'))
+  // ── Classify images into photography vs logos ───────────────────────
+  const allImages = [...imageSet]
+    .filter(src => !src.includes('sprite') && !src.includes('placeholder'))
+
+  const photography: string[] = []
+  let detectedLogo: string | undefined = logoSrc
+
+  for (const src of allImages) {
+    // Get dimensions from DOM if possible
+    const imgEl = $(`img[src="${src}"], img[src="${src.replace(origin, '')}"]`).first()
+    const alt = imgEl.attr('alt') || ''
+    const w = parseInt(imgEl.attr('width') || '0')
+    const h = parseInt(imgEl.attr('height') || '0')
+
+    if (isLikelyLogo(src, alt, w, h)) {
+      if (!detectedLogo) detectedLogo = src
+      continue
+    }
+
+    // Only keep raster images for photography
+    if (/\.(jpe?g|png|webp)(\?|$)/i.test(src)) {
+      photography.push(src)
+    }
+  }
+
+  // Sort: prefer images from known photography paths
+  photography.sort((a, b) => {
+    const aPhoto = isLikelyPhotography(a) ? 0 : 1
+    const bPhoto = isLikelyPhotography(b) ? 0 : 1
+    return aPhoto - bPhoto
+  })
+
+  const heroImages = photography
+    .filter(src => !src.includes('icon'))
     .slice(0, 8)
 
   // ── Navigation ────────────────────────────────────────────────────────
@@ -146,7 +205,7 @@ export async function scrapeSite(url: string): Promise<SiteData> {
     description,
     ogImage: ogImage ? toAbsolute(ogImage) : undefined,
     heroImages,
-    logoUrl,
+    logoUrl: detectedLogo,
     colors: colors.slice(0, 8),
     themeColor,
     navLinks: navLinks.slice(0, 8),
