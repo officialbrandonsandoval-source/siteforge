@@ -7,345 +7,415 @@ export interface SnackResult {
 }
 
 function isLight(hex: string): boolean {
-  if (!hex || !hex.startsWith('#')) return false
-  const num = parseInt(hex.replace('#', ''), 16)
-  const r = (num >> 16) & 0xff
-  const g = (num >> 8) & 0xff
-  const b = num & 0xff
+  if (!hex?.startsWith('#')) return false
+  const n = parseInt(hex.slice(1), 16)
+  const r = (n >> 16) & 0xff
+  const g = (n >> 8) & 0xff
+  const b = n & 0xff
   return (r * 299 + g * 587 + b * 114) / 1000 > 160
 }
 
-function lighten(hex: string, amt = 20): string {
-  if (!hex?.startsWith('#')) return '#1c1c1c'
-  const n = parseInt(hex.slice(1), 16)
-  const r = Math.min(255, ((n >> 16) & 0xff) + amt)
-  const g = Math.min(255, ((n >> 8) & 0xff) + amt)
-  const b = Math.min(255, (n & 0xff) + amt)
-  return `#${[r, g, b].map(v => v.toString(16).padStart(2, '0')).join('')}`
-}
-
 function esc(s: string): string {
-  return s.replace(/\\/g, '\\\\').replace(/'/g, "\\'")
+  return (s || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/\n/g, ' ').replace(/`/g, '\\`').trim()
 }
 
-// Generate a rich, visually branded Snack app
 function generateSnackApp(spec: AppSpec, siteData: SiteData): string {
   const heroImg = siteData.heroImages[0] || siteData.ogImage || ''
-  const secondImg = siteData.heroImages[1] || ''
-  const thirdImg = siteData.heroImages[2] || ''
-  const hasPhotography = !!heroImg
-  const logoImg = siteData.logoUrl || ''
+  const img2 = siteData.heroImages[1] || ''
+  const img3 = siteData.heroImages[2] || ''
 
-  const isDark = !isLight(spec.backgroundColor)
-  const textColor = isDark ? '#ffffff' : '#111111'
-  const mutedColor = isDark ? 'rgba(255,255,255,0.45)' : 'rgba(0,0,0,0.4)'
-  const dividerColor = isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)'
-  const tabBorderColor = isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.08)'
+  const dark = !isLight(spec.backgroundColor || '#0a0a0a')
+  const textColor = dark ? '#ffffff' : '#111111'
+  const mutedColor = dark ? '#aaaaaa' : '#666666'
+  const cardBg = dark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)'
+  const borderColor = dark ? 'rgba(255,255,255,0.10)' : 'rgba(0,0,0,0.08)'
+  const primaryColor = spec.primaryColor || '#000000'
+  const bgColor = spec.backgroundColor || '#0a0a0a'
+  const ctaTextColor = isLight(primaryColor) ? '#000000' : '#ffffff'
 
-  // Build real nav items from actual site links
-  const navItems = siteData.navLinks
-    .filter(l => l.label && l.href)
-    .slice(0, 6)
+  // Reservation: is it an external platform we should WebView-embed?
+  const reserveUrl = siteData.reservationUrl || siteData.url
+  const hasExternalReservation = siteData.reservationUrl &&
+    (siteData.reservationUrl.includes('opentable') ||
+     siteData.reservationUrl.includes('resy.com') ||
+     siteData.reservationUrl.includes('sevenrooms') ||
+     siteData.reservationUrl.includes('tock.com') ||
+     siteData.reservationUrl.includes('exploretock'))
 
-  // Build tab bar from spec
-  const tabs = spec.bottomTabs.slice(0, 4).map((t, i) => ({
-    id: t.name.toLowerCase().replace(/\s+/g, '_'),
-    label: t.name,
-    icon: getTabIcon(t.icon || t.name, i),
-  }))
+  // Menu items
+  const menuItems = siteData.menuItems.slice(0, 16)
+  const menuItemsJson = JSON.stringify(menuItems.map(i => ({
+    name: esc(i.name),
+    description: i.description ? esc(i.description) : '',
+    price: i.price ? esc(i.price) : '',
+    category: i.category ? esc(i.category) : '',
+  })))
 
-  // CTA link
-  const ctaLink = siteData.navLinks.find(l => /reserv|book|order/i.test(l.label))
-  const ctaHref = esc(ctaLink?.href || siteData.url)
-  const ctaLabel = esc(ctaLink?.label || 'Get Started')
+  // Locations
+  const locationsJson = JSON.stringify(siteData.locations.slice(0, 6).map(l => ({
+    name: l.name ? esc(l.name) : '',
+    address: esc(l.address),
+    phone: l.phone ? esc(l.phone) : '',
+    hours: l.hours ? esc(l.hours) : '',
+    mapQuery: l.mapQuery,
+  })))
 
-  // Reserve link
-  const reserveLink = siteData.navLinks.find(l => /reserv|book|order|contact/i.test(l.label))
-  const reserveHref = esc(reserveLink?.href || siteData.url)
-  const reserveLabel = esc(reserveLink?.label || 'Make a Reservation')
+  // About content
+  const aboutParagraphs = siteData.aboutContent.slice(0, 4).map(p => esc(p))
 
-  // Hero fallback: no-photo mode
-  const heroNoPhoto = `
-        <View style={s.hero}>
-          <View style={[s.heroSolid, { backgroundColor: C.primary }]}>
-            ${logoImg ? `<Image source={{ uri: '${esc(logoImg)}' }} style={s.heroLogo} resizeMode="contain" />` : `<Text style={s.heroEditorial}>${esc(spec.appName)}</Text>`}
-          </View>
-          <View style={s.heroContent}>
-            <Text style={s.heroTitle}>${esc(spec.appName)}</Text>
-            <Text style={s.heroSub}>${esc(spec.tagline)}</Text>
-            <TouchableOpacity style={s.heroCta} onPress={() => openLink('${ctaHref}')}>
-              <Text style={s.heroCtaText}>${ctaLabel}</Text>
-            </TouchableOpacity>
-          </View>
-        </View>`
+  // Nav links for home screen (no reservation link — that's in Reserve tab)
+  const homeNavLinks = siteData.navLinks
+    .filter(l => !/reserv|book|order/i.test(l.label))
+    .slice(0, 5)
+    .map(l => ({ label: esc(l.label), href: esc(l.href) }))
 
-  const heroWithPhoto = `
-        <View style={s.hero}>
-          <Image source={{ uri: HERO_IMG }} style={s.heroBg} resizeMode="cover" />
-          {/* Gradient simulation — top fade for status bar */}
-          <View style={s.gradTop1} />
-          <View style={s.gradTop2} />
-          {/* Gradient simulation — bottom fade */}
-          <View style={s.gradBot1} />
-          <View style={s.gradBot2} />
-          <View style={s.gradBot3} />
-          <View style={s.heroContent}>
-            <Text style={s.heroTitle}>${esc(spec.appName)}</Text>
-            <Text style={s.heroSub}>${esc(spec.tagline)}</Text>
-            <TouchableOpacity style={s.heroCta} onPress={() => openLink('${ctaHref}')}>
-              <Text style={s.heroCtaText}>${ctaLabel}</Text>
-            </TouchableOpacity>
-          </View>
-        </View>`
+  // Tabs
+  const tabDefs = [
+    { id: 'home', label: 'Home', icon: '🏠' },
+    { id: 'menu', label: 'Menu', icon: '☰' },
+    { id: 'reserve', label: siteData.reservationUrl ? 'Reserve' : 'Visit', icon: '📅' },
+    { id: 'story', label: 'Our Story', icon: '✦' },
+  ]
 
-  // Quick links section
-  const quickLinks = navItems.slice(0, 5).map(link => `
-        <TouchableOpacity style={s.linkRow} onPress={() => openLink('${esc(link.href)}')}>
-          <Text style={s.linkLabel}>${esc(link.label)}</Text>
-          <Text style={s.linkArrow}>{'\u2192'}</Text>
-        </TouchableOpacity>`).join('')
-
-  // Photo feature
-  let photoFeature = ''
-  if (secondImg && thirdImg) {
-    photoFeature = `
-      <View style={s.photoDuo}>
-        <Image source={{ uri: '${esc(secondImg)}' }} style={s.photoDuoImg} resizeMode="cover" />
-        <Image source={{ uri: '${esc(thirdImg)}' }} style={s.photoDuoImg} resizeMode="cover" />
-      </View>`
-  } else if (secondImg) {
-    photoFeature = `
-      <Image source={{ uri: '${esc(secondImg)}' }} style={s.photoSingle} resizeMode="cover" />`
-  }
-
-  // Story section
-  const storySection = siteData.sections[0] ? `
-      <View style={s.storySection}>
-        <Text style={s.storyHeadline}>${esc(siteData.sections[0].heading)}</Text>
-        ${siteData.sections[0].content ? `<Text style={s.storyBody}>${esc(siteData.sections[0].content.slice(0, 180))}</Text>` : ''}
-      </View>` : ''
-
-  // Menu screen links
-  const menuLinks = siteData.navLinks.map(link => `
-      <TouchableOpacity style={s.menuRow} onPress={() => openLink('${esc(link.href)}')}>
-        <Text style={s.menuLabel}>${esc(link.label)}</Text>
-        <Text style={s.menuArrow}>{'\u2192'}</Text>
-      </TouchableOpacity>`).join('')
-
-  // Story screen sections
-  const storySections = siteData.sections.slice(0, 4).map((sec, i) => `
-      <View style={[s.storySec, ${i % 2 !== 0 ? '{ paddingLeft: 40 }' : '{}'}]}>
-        <Text style={s.storySecHead}>${esc(sec.heading)}</Text>
-        ${sec.content ? `<Text style={s.storySecBody}>${esc(sec.content.slice(0, 200))}</Text>` : ''}
-      </View>`).join('')
-
-  return `import React, { useState } from 'react';
+  return `import React, { useState, useRef } from 'react';
 import {
   View, Text, ScrollView, TouchableOpacity, StyleSheet,
-  SafeAreaView, StatusBar, Linking, Image,
-  Dimensions,
+  SafeAreaView, StatusBar, Linking, Image, ImageBackground,
+  Dimensions, FlatList,
 } from 'react-native';
+import { WebView } from 'react-native-webview';
 
 const { width: W, height: H } = Dimensions.get('window');
+const DARK = ${dark};
 
 const C = {
-  primary:    '${spec.primaryColor || '#000000'}',
-  bg:         '${spec.backgroundColor || '#0a0a0a'}',
-  text:       '${textColor}',
-  muted:      '${mutedColor}',
-  divider:    '${dividerColor}',
-  tabBorder:  '${tabBorderColor}',
-  accent:     '${spec.accentColor || spec.primaryColor || '#3b82f6'}',
+  primary:  '${esc(primaryColor)}',
+  bg:       '${esc(bgColor)}',
+  text:     '${textColor}',
+  muted:    '${mutedColor}',
+  card:     '${cardBg}',
+  border:   '${borderColor}',
 };
 
-const SITE_URL = '${esc(siteData.url)}';
 const HERO_IMG = '${esc(heroImg)}';
+const IMG_2    = '${esc(img2)}';
+const IMG_3    = '${esc(img3)}';
+const SITE_URL = '${esc(siteData.url)}';
 
-function openLink(path) {
-  Linking.openURL(path.startsWith('http') ? path : SITE_URL + path);
-}
+const MENU_ITEMS = ${menuItemsJson};
+const LOCATIONS  = ${locationsJson};
+const HOME_LINKS = ${JSON.stringify(homeNavLinks)};
+const ABOUT_PARAS = ${JSON.stringify(aboutParagraphs)};
+const RESERVE_URL = '${esc(reserveUrl)}';
+const HAS_WEBVIEW_RESERVE = ${hasExternalReservation ? 'true' : 'false'};
 
-// ── HOME SCREEN ───────────────────────────────────────────────────────────
+// ── HOME ───────────────────────────────────────────────────────────────────
 function HomeScreen() {
   return (
     <ScrollView style={s.screen} showsVerticalScrollIndicator={false}>
-      {/* Immersive hero — no header bar */}
-      ${hasPhotography ? heroWithPhoto : heroNoPhoto}
+      {/* Hero */}
+      {HERO_IMG ? (
+        <ImageBackground source={{ uri: HERO_IMG }} style={s.hero} resizeMode="cover">
+          {/* bottom gradient layers */}
+          <View style={[StyleSheet.absoluteFill, { justifyContent: 'flex-end' }]}>
+            <View style={{ height: '60%', backgroundColor: DARK ? 'rgba(0,0,0,0.0)' : 'rgba(255,255,255,0.0)' }} />
+            <View style={{ height: '30%', backgroundColor: DARK ? 'rgba(0,0,0,0.45)' : 'rgba(255,255,255,0.55)' }} />
+            <View style={{ height: '25%', backgroundColor: DARK ? 'rgba(0,0,0,0.75)' : 'rgba(255,255,255,0.82)' }} />
+          </View>
+          {/* top scrim for status bar */}
+          <View style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 80, backgroundColor: 'rgba(0,0,0,0.18)' }} />
+          <View style={s.heroContent}>
+            <Text style={s.heroTitle}>${esc(spec.appName)}</Text>
+            <Text style={s.heroSub}>${esc(spec.tagline)}</Text>
+          </View>
+        </ImageBackground>
+      ) : (
+        <View style={[s.hero, { backgroundColor: C.primary }]}>
+          <View style={s.heroContent}>
+            <Text style={[s.heroTitle, { color: '${ctaTextColor}' }]}>${esc(spec.appName)}</Text>
+            <Text style={[s.heroSub, { color: DARK ? 'rgba(255,255,255,0.7)' : 'rgba(0,0,0,0.6)' }]}>${esc(spec.tagline)}</Text>
+          </View>
+        </View>
+      )}
 
-      {/* Quick links */}
-      <View style={s.linksSection}>
-        <Text style={s.sectionLabel}>EXPLORE</Text>
-${quickLinks}
+      {/* Photo pair */}
+      {(IMG_2 || IMG_3) && (
+        <View style={{ flexDirection: 'row', height: 160 }}>
+          {IMG_2 ? <Image source={{ uri: IMG_2 }} style={{ flex: 1 }} resizeMode="cover" /> : null}
+          {IMG_3 ? <Image source={{ uri: IMG_3 }} style={{ flex: 1, marginLeft: 2 }} resizeMode="cover" /> : null}
+        </View>
+      )}
+
+      {/* Explore section */}
+      {HOME_LINKS.length > 0 && (
+        <View style={{ paddingTop: 24 }}>
+          <Text style={s.sectionLabel}>EXPLORE</Text>
+          {HOME_LINKS.map((link, i) => (
+            <TouchableOpacity
+              key={i}
+              style={s.linkRow}
+              onPress={() => Linking.openURL(link.href)}
+            >
+              <Text style={[s.linkLabel, { color: C.text }]}>{link.label}</Text>
+              <Text style={[s.linkArrow, { color: C.muted }]}>→</Text>
+            </TouchableOpacity>
+          ))}
+        </View>
+      )}
+      <View style={{ height: 40 }} />
+    </ScrollView>
+  );
+}
+
+// ── MENU ───────────────────────────────────────────────────────────────────
+function MenuScreen() {
+  const categories = [...new Set(MENU_ITEMS.map(i => i.category).filter(Boolean))];
+  const hasCategories = categories.length > 1;
+
+  return (
+    <ScrollView style={s.screen} showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 40 }}>
+      <View style={{ padding: 20, paddingTop: 24, paddingBottom: 8 }}>
+        <Text style={[s.pageTitle, { color: C.text }]}>Menu</Text>
       </View>
 
-      {/* Photo feature */}
-${photoFeature}
-
-      {/* Story / About */}
-${storySection}
-
-      <View style={{ height: 40 }} />
+      {MENU_ITEMS.length === 0 ? (
+        /* No menu scraped — show nav links instead */
+        <View style={{ padding: 20 }}>
+          <Text style={[s.bodyText, { color: C.muted, marginBottom: 20 }]}>
+            View our full menu at ${esc(new URL(siteData.url).hostname)}
+          </Text>
+          ${siteData.menuItems.length === 0 && siteData.navLinks.filter(l => /menu|food/i.test(l.label)).length > 0
+            ? siteData.navLinks.filter(l => /menu|food/i.test(l.label)).slice(0, 3).map(l =>
+              `<TouchableOpacity style={[s.ctaButton, { backgroundColor: C.primary }]} onPress={() => Linking.openURL('${esc(l.href)}')}>
+            <Text style={[s.ctaText, { color: '${ctaTextColor}' }]}>${esc(l.label)}</Text>
+          </TouchableOpacity>`).join('\n          ')
+            : `<TouchableOpacity style={[s.ctaButton, { backgroundColor: C.primary }]} onPress={() => Linking.openURL(SITE_URL + '/menu')}>
+            <Text style={[s.ctaText, { color: '${ctaTextColor}' }]}>View Full Menu</Text>
+          </TouchableOpacity>`
+          }
+        </View>
+      ) : (
+        MENU_ITEMS.map((item, i) => (
+          <View key={i}>
+            {/* Category divider */}
+            {hasCategories && (i === 0 || MENU_ITEMS[i - 1].category !== item.category) && item.category ? (
+              <Text style={[s.sectionLabel, { paddingTop: 20 }]}>{item.category.toUpperCase()}</Text>
+            ) : null}
+            <View style={[s.menuItem, { borderBottomColor: C.border }]}>
+              <View style={{ flex: 1 }}>
+                <Text style={[s.menuItemName, { color: C.text }]}>{item.name}</Text>
+                {item.description ? (
+                  <Text style={[s.menuItemDesc, { color: C.muted }]}>{item.description}</Text>
+                ) : null}
+              </View>
+              {item.price ? (
+                <Text style={[s.menuItemPrice, { color: C.primary || C.text }]}>{item.price}</Text>
+              ) : null}
+            </View>
+          </View>
+        ))
+      )}
     </ScrollView>
   );
 }
 
-// ── MENU / LINKS SCREEN ───────────────────────────────────────────────────
-function MenuScreen() {
-  return (
-    <ScrollView style={s.screen} showsVerticalScrollIndicator={false}>
-      <Text style={s.screenTitle}>Menu</Text>
-${menuLinks}
-      <TouchableOpacity style={s.visitLink} onPress={() => openLink(SITE_URL)}>
-        <Text style={s.visitText}>Visit {'\u2197'}</Text>
-      </TouchableOpacity>
-    </ScrollView>
-  );
-}
-
-// ── RESERVE / CONTACT SCREEN ──────────────────────────────────────────────
+// ── RESERVE ────────────────────────────────────────────────────────────────
 function ReserveScreen() {
+  const [showWeb, setShowWeb] = useState(false);
+
+  if (showWeb && HAS_WEBVIEW_RESERVE) {
+    return (
+      <View style={{ flex: 1, backgroundColor: C.bg }}>
+        <View style={[s.webHeader, { backgroundColor: C.bg, borderBottomColor: C.border }]}>
+          <TouchableOpacity onPress={() => setShowWeb(false)}>
+            <Text style={{ color: C.primary, fontSize: 15, fontWeight: '600' }}>← Back</Text>
+          </TouchableOpacity>
+          <Text style={[s.webHeaderTitle, { color: C.text }]}>Reservations</Text>
+          <View style={{ width: 60 }} />
+        </View>
+        <WebView
+          source={{ uri: RESERVE_URL }}
+          style={{ flex: 1 }}
+          javaScriptEnabled
+          domStorageEnabled
+        />
+      </View>
+    );
+  }
+
   return (
-    <ScrollView style={s.screen} contentContainerStyle={s.reserveContainer}>
-      ${secondImg ? `<Image source={{ uri: '${esc(secondImg)}' }} style={s.reserveImg} resizeMode="cover" />` : ''}
-      <Text style={s.reserveName}>${esc(spec.appName)}</Text>
-      <Text style={s.reserveDesc}>${esc(siteData.description?.slice(0, 120) || 'Book your experience today.')}</Text>
-      <TouchableOpacity style={s.reserveBtn} onPress={() => openLink('${reserveHref}')}>
-        <Text style={s.reserveBtnText}>${reserveLabel}</Text>
-      </TouchableOpacity>
-      <TouchableOpacity style={s.reserveSecondary} onPress={() => openLink(SITE_URL)}>
-        <Text style={s.reserveSecText}>or visit website</Text>
-      </TouchableOpacity>
+    <ScrollView style={s.screen} contentContainerStyle={{ paddingBottom: 60 }}>
+      {IMG_2 ? (
+        <Image source={{ uri: IMG_2 }} style={s.reserveImg} resizeMode="cover" />
+      ) : HERO_IMG ? (
+        <Image source={{ uri: HERO_IMG }} style={s.reserveImg} resizeMode="cover" />
+      ) : null}
+
+      <View style={{ padding: 24 }}>
+        <Text style={[s.pageTitle, { color: C.text }]}>
+          ${esc(siteData.navLinks.find(l => /reserv|book/i.test(l.label))?.label || 'Reserve a Table')}
+        </Text>
+        ${siteData.description ? `<Text style={[s.bodyText, { color: C.muted, marginBottom: 28 }]}>${esc(siteData.description.slice(0, 120))}</Text>` : ''}
+
+        <TouchableOpacity
+          style={[s.ctaButton, { backgroundColor: C.primary, marginBottom: 12 }]}
+          onPress={() => HAS_WEBVIEW_RESERVE ? setShowWeb(true) : Linking.openURL(RESERVE_URL)}
+        >
+          <Text style={[s.ctaText, { color: '${ctaTextColor}' }]}>
+            {HAS_WEBVIEW_RESERVE ? 'Make a Reservation' : 'Book Now'}
+          </Text>
+        </TouchableOpacity>
+
+        {LOCATIONS.length > 0 && (
+          <View style={{ marginTop: 32 }}>
+            <Text style={s.sectionLabel}>LOCATIONS</Text>
+            {LOCATIONS.map((loc, i) => (
+              <TouchableOpacity
+                key={i}
+                style={[s.locationCard, { backgroundColor: C.card, borderColor: C.border }]}
+                onPress={() => Linking.openURL('maps://?q=' + loc.mapQuery)}
+              >
+                {loc.name ? <Text style={[s.locationName, { color: C.text }]}>{loc.name}</Text> : null}
+                <Text style={[s.locationAddr, { color: C.muted }]}>{loc.address}</Text>
+                {loc.phone ? <Text style={[s.locationPhone, { color: C.primary }]}>{loc.phone}</Text> : null}
+                {loc.hours ? <Text style={[s.locationHours, { color: C.muted }]}>{loc.hours}</Text> : null}
+                <Text style={[s.locationDirections, { color: C.primary }]}>Get Directions →</Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+        )}
+      </View>
     </ScrollView>
   );
 }
 
-// ── OUR STORY SCREEN ──────────────────────────────────────────────────────
+// ── STORY ──────────────────────────────────────────────────────────────────
 function StoryScreen() {
+  const paras = ABOUT_PARAS.length > 0 ? ABOUT_PARAS : [
+    '${esc(siteData.description || spec.tagline)}',
+  ];
+
   return (
-    <ScrollView style={s.screen} showsVerticalScrollIndicator={false}>
-      <Text style={s.screenTitle}>Our Story</Text>
-${storySections}
-      <View style={{ height: 40 }} />
+    <ScrollView style={s.screen} contentContainerStyle={{ paddingBottom: 60 }}>
+      {IMG_3 ? (
+        <Image source={{ uri: IMG_3 }} style={{ width: W, height: 240 }} resizeMode="cover" />
+      ) : IMG_2 ? (
+        <Image source={{ uri: IMG_2 }} style={{ width: W, height: 240 }} resizeMode="cover" />
+      ) : null}
+
+      <View style={{ padding: 24 }}>
+        <Text style={[s.pageTitle, { color: C.text }]}>Our Story</Text>
+        {paras.map((p, i) => (
+          <Text key={i} style={[s.bodyText, { color: i === 0 ? C.text : C.muted, marginBottom: 16 }]}>
+            {p}
+          </Text>
+        ))}
+
+        {/* Sections from main page */}
+        ${siteData.sections.slice(0, 3).map(sec => `
+        <View style={{ marginTop: 16 }}>
+          <Text style={[s.sectionTitle, { color: C.text }]}>${esc(sec.heading)}</Text>
+          ${sec.content ? `<Text style={[s.bodyText, { color: C.muted }]}>${esc(sec.content.slice(0, 200))}</Text>` : ''}
+        </View>`).join('')}
+      </View>
     </ScrollView>
   );
 }
 
-// ── APP SHELL ─────────────────────────────────────────────────────────────
-const TABS = ${JSON.stringify(tabs)};
+// ── SHELL ──────────────────────────────────────────────────────────────────
+const TABS = ${JSON.stringify(tabDefs)};
 
 export default function App() {
-  const [active, setActive] = useState(TABS[0]?.id || 'home');
-  const isDark = ${isDark};
+  const [active, setActive] = useState('home');
 
   const renderScreen = () => {
-    if (active === TABS[0]?.id) return <HomeScreen />;
-    if (active === TABS[1]?.id) return <MenuScreen />;
-    if (active === TABS[2]?.id) return <ReserveScreen />;
-    return <StoryScreen />;
+    switch (active) {
+      case 'home':    return <HomeScreen />;
+      case 'menu':    return <MenuScreen />;
+      case 'reserve': return <ReserveScreen />;
+      case 'story':   return <StoryScreen />;
+      default:        return <HomeScreen />;
+    }
   };
 
   return (
-    <SafeAreaView style={s.root}>
-      <StatusBar barStyle={isDark ? 'light-content' : 'dark-content'} backgroundColor={C.bg} />
-      <View style={{ flex: 1 }}>{renderScreen()}</View>
-      <View style={s.tabBar}>
-        {TABS.map(tab => (
-          <TouchableOpacity key={tab.id} style={[s.tab, { opacity: active === tab.id ? 1 : 0.5 }]} onPress={() => setActive(tab.id)}>
-            <Text style={s.tabIcon}>{tab.icon}</Text>
-            <Text style={[s.tabLabel, { fontWeight: active === tab.id ? '700' : '400' }]}>{tab.label}</Text>
-          </TouchableOpacity>
-        ))}
+    <SafeAreaView style={[s.root, { backgroundColor: C.bg }]}>
+      <StatusBar barStyle={DARK ? 'light-content' : 'dark-content'} backgroundColor={C.bg} />
+      {renderScreen()}
+      <View style={[s.tabBar, { backgroundColor: C.bg, borderTopColor: C.border }]}>
+        {TABS.map(tab => {
+          const isActive = active === tab.id;
+          return (
+            <TouchableOpacity
+              key={tab.id}
+              style={s.tab}
+              onPress={() => setActive(tab.id)}
+            >
+              <View style={{ opacity: isActive ? 1 : 0.4 }}>
+                <Text style={s.tabIcon}>{tab.icon}</Text>
+                <Text style={[s.tabLabel, { color: isActive ? C.primary : C.text, fontWeight: isActive ? '600' : '400' }]}>
+                  {tab.label}
+                </Text>
+              </View>
+            </TouchableOpacity>
+          );
+        })}
       </View>
     </SafeAreaView>
   );
 }
 
 const s = StyleSheet.create({
-  root:             { flex: 1, backgroundColor: C.bg },
-  screen:           { flex: 1, backgroundColor: C.bg },
+  root:       { flex: 1 },
+  screen:     { flex: 1 },
 
-  // ── Hero (immersive, no header) ─────────────────────────────────
-  hero:             { width: W, height: H * 0.6 },
-  heroBg:           { ...StyleSheet.absoluteFillObject, width: W, height: H * 0.6 },
-  heroSolid:        { ...StyleSheet.absoluteFillObject, alignItems: 'center', justifyContent: 'center' },
-  heroLogo:         { width: 120, height: 120, tintColor: '${isDark ? '#ffffff' : undefined}' },
-  heroEditorial:    { fontSize: 52, fontWeight: '900', color: '#fff', fontStyle: 'italic', letterSpacing: -2, textAlign: 'center', paddingHorizontal: 20 },
+  // Hero
+  hero:             { width: W, height: H * 0.60, justifyContent: 'flex-end' },
+  heroContent:      { padding: 24, paddingBottom: 28 },
+  heroTitle:        { fontSize: 42, fontWeight: '900', color: '#ffffff', letterSpacing: -1.5, marginBottom: 8 },
+  heroSub:          { fontSize: 16, fontWeight: '300', color: 'rgba(255,255,255,0.78)', letterSpacing: 0.3, lineHeight: 23 },
 
-  // Gradient simulation layers — top
-  gradTop1:         { position: 'absolute', top: 0, left: 0, right: 0, height: H * 0.12, backgroundColor: 'rgba(0,0,0,0.18)' },
-  gradTop2:         { position: 'absolute', top: 0, left: 0, right: 0, height: H * 0.06, backgroundColor: 'rgba(0,0,0,0.10)' },
-  // Gradient simulation layers — bottom
-  gradBot1:         { position: 'absolute', bottom: 0, left: 0, right: 0, height: H * 0.40, backgroundColor: 'rgba(0,0,0,0.15)' },
-  gradBot2:         { position: 'absolute', bottom: 0, left: 0, right: 0, height: H * 0.25, backgroundColor: 'rgba(0,0,0,0.25)' },
-  gradBot3:         { position: 'absolute', bottom: 0, left: 0, right: 0, height: H * 0.12, backgroundColor: '${isDark ? 'rgba(0,0,0,0.4)' : 'rgba(0,0,0,0.2)'}' },
+  // Typography
+  pageTitle:    { fontSize: 32, fontWeight: '900', letterSpacing: -0.8, marginBottom: 8 },
+  sectionLabel: { fontSize: 11, fontWeight: '500', letterSpacing: 3, color: '${mutedColor}', paddingHorizontal: 20, marginBottom: 4 },
+  sectionTitle: { fontSize: 20, fontWeight: '700', letterSpacing: -0.3, marginBottom: 6 },
+  bodyText:     { fontSize: 15, fontWeight: '300', letterSpacing: 0.1, lineHeight: 24 },
 
-  heroContent:      { position: 'absolute', bottom: 0, left: 0, right: 0, padding: 20, paddingBottom: 28 },
-  heroTitle:        { fontSize: 42, fontWeight: '900', color: '#fff', letterSpacing: -1.5, marginBottom: 6 },
-  heroSub:          { fontSize: 16, fontWeight: '300', color: 'rgba(255,255,255,0.7)', letterSpacing: 0.5, marginBottom: 20 },
-  heroCta:          { alignSelf: 'flex-start', borderWidth: 1, borderColor: 'rgba(255,255,255,0.5)', paddingHorizontal: 20, paddingVertical: 9, borderRadius: 4, backgroundColor: 'transparent' },
-  heroCtaText:      { fontSize: 13, fontWeight: '500', color: '#fff', letterSpacing: 0.5 },
+  // Nav links (home)
+  linkRow:    { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 17, paddingHorizontal: 20, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: '${borderColor}' },
+  linkLabel:  { fontSize: 16, fontWeight: '500' },
+  linkArrow:  { fontSize: 16 },
 
-  // ── Quick links ─────────────────────────────────────────────────
-  linksSection:     { paddingTop: 28 },
-  sectionLabel:     { fontSize: 11, fontWeight: '500', letterSpacing: 3, color: C.muted, paddingHorizontal: 20, marginBottom: 8 },
-  linkRow:          { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 18, paddingHorizontal: 20, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: C.divider },
-  linkLabel:        { fontSize: 16, fontWeight: '500', color: C.text },
-  linkArrow:        { fontSize: 16, color: C.muted },
+  // Menu
+  menuItem:       { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', paddingVertical: 16, paddingHorizontal: 20, borderBottomWidth: StyleSheet.hairlineWidth },
+  menuItemName:   { fontSize: 16, fontWeight: '500', marginBottom: 3, flex: 1 },
+  menuItemDesc:   { fontSize: 13, fontWeight: '300', lineHeight: 18, flex: 1, paddingRight: 8 },
+  menuItemPrice:  { fontSize: 15, fontWeight: '600', minWidth: 50, textAlign: 'right' },
 
-  // ── Photo feature ───────────────────────────────────────────────
-  photoDuo:         { flexDirection: 'row', marginTop: 24 },
-  photoDuoImg:      { width: W / 2, height: 180 },
-  photoSingle:      { width: W, height: W * 9 / 16, marginTop: 24 },
+  // Reserve
+  reserveImg:   { width: W, height: 240 },
+  ctaButton:    { width: '100%', paddingVertical: 16, borderRadius: 10, alignItems: 'center' },
+  ctaText:      { fontSize: 16, fontWeight: '700' },
 
-  // ── Story / about (editorial) ───────────────────────────────────
-  storySection:     { padding: 20, paddingTop: 32 },
-  storyHeadline:    { fontSize: 28, fontWeight: '800', letterSpacing: -0.5, color: C.text, marginBottom: 12 },
-  storyBody:        { fontSize: 15, lineHeight: 24, fontWeight: '300', letterSpacing: 0.1, color: C.muted },
+  // Location cards
+  locationCard:       { borderRadius: 12, borderWidth: 1, padding: 16, marginBottom: 10 },
+  locationName:       { fontSize: 15, fontWeight: '700', marginBottom: 2 },
+  locationAddr:       { fontSize: 13, lineHeight: 18, marginBottom: 4 },
+  locationPhone:      { fontSize: 14, fontWeight: '500', marginBottom: 2 },
+  locationHours:      { fontSize: 12, marginBottom: 6 },
+  locationDirections: { fontSize: 13, fontWeight: '600' },
 
-  // ── Menu screen ─────────────────────────────────────────────────
-  screenTitle:      { fontSize: 32, fontWeight: '900', letterSpacing: -0.8, color: C.text, paddingTop: 24, paddingHorizontal: 20, paddingBottom: 16 },
-  menuRow:          { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 18, paddingHorizontal: 20, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: C.divider },
-  menuLabel:        { fontSize: 16, fontWeight: '500', color: C.text },
-  menuArrow:        { fontSize: 16, color: C.muted },
-  visitLink:        { paddingHorizontal: 20, paddingVertical: 24 },
-  visitText:        { fontSize: 13, fontWeight: '400', color: C.muted, letterSpacing: 0.5 },
+  // WebView header
+  webHeader:        { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 16, borderBottomWidth: StyleSheet.hairlineWidth },
+  webHeaderTitle:   { fontSize: 15, fontWeight: '600' },
 
-  // ── Reserve screen ──────────────────────────────────────────────
-  reserveContainer: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 20 },
-  reserveImg:       { width: W - 40, height: 220, borderRadius: 16, marginBottom: 24 },
-  reserveName:      { fontSize: 32, fontWeight: '900', letterSpacing: -0.8, color: C.text, textAlign: 'center', marginBottom: 8 },
-  reserveDesc:      { fontSize: 15, fontWeight: '300', lineHeight: 24, color: C.muted, textAlign: 'center', marginBottom: 28, paddingHorizontal: 20 },
-  reserveBtn:       { width: '100%', paddingVertical: 16, borderRadius: 8, alignItems: 'center', backgroundColor: C.primary },
-  reserveBtnText:   { fontSize: 16, fontWeight: '700', color: '${isLight(spec.primaryColor || '#000') ? '#000000' : '#ffffff'}' },
-  reserveSecondary: { marginTop: 16 },
-  reserveSecText:   { fontSize: 13, fontWeight: '400', color: C.muted },
-
-  // ── Our Story screen (editorial) ───────────────────────────────
-  storySec:         { paddingHorizontal: 20, paddingVertical: 20 },
-  storySecHead:     { fontSize: 22, fontWeight: '800', letterSpacing: -0.3, color: C.text, marginBottom: 8 },
-  storySecBody:     { fontSize: 15, lineHeight: 24, fontWeight: '300', letterSpacing: 0.1, color: C.muted },
-
-  // ── Tab bar ─────────────────────────────────────────────────────
-  tabBar:           { flexDirection: 'row', height: 58, borderTopWidth: 0.5, borderTopColor: C.tabBorder, backgroundColor: C.bg, paddingBottom: 6, paddingTop: 6 },
-  tab:              { flex: 1, alignItems: 'center', justifyContent: 'center' },
-  tabIcon:          { fontSize: 20, marginBottom: 2, color: C.text },
-  tabLabel:         { fontSize: 10, letterSpacing: 0.5, color: C.text },
+  // Tab bar
+  tabBar:   { flexDirection: 'row', borderTopWidth: 0.5, paddingBottom: 6, paddingTop: 8 },
+  tab:      { flex: 1, alignItems: 'center' },
+  tabIcon:  { fontSize: 20, textAlign: 'center', marginBottom: 2 },
+  tabLabel: { fontSize: 10, textAlign: 'center', letterSpacing: 0.3 },
 });
 `
-}
-
-function getTabIcon(nameOrIcon: string, index: number): string {
-  const n = nameOrIcon.toLowerCase()
-  if (n.includes('home') || n.includes('house')) return '🏠'
-  if (n.includes('menu') || n.includes('food') || n.includes('eat') || n.includes('restaurant')) return '☰'
-  if (n.includes('reserv') || n.includes('book') || n.includes('order')) return '📅'
-  if (n.includes('story') || n.includes('about') || n.includes('info')) return '✦'
-  if (n.includes('search') || n.includes('find')) return '🔍'
-  if (n.includes('person') || n.includes('account') || n.includes('profile')) return '👤'
-  if (n.includes('setting')) return '⚙'
-  if (n.includes('dine') || n.includes('dining')) return '🍽'
-  const fallbacks = ['🏠', '☰', '📅', '✦']
-  return fallbacks[index] || '✦'
 }
 
 export async function publishToSnack(spec: AppSpec, siteData: SiteData): Promise<SnackResult> {
@@ -368,6 +438,7 @@ export async function publishToSnack(spec: AppSpec, siteData: SiteData): Promise
       'react': '18.3.1',
       'react-native': '0.76.5',
       'expo': '~52.0.0',
+      'react-native-webview': '13.10.5',
     },
   }
 
