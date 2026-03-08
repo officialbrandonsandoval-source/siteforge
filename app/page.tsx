@@ -1,65 +1,188 @@
-import Image from "next/image";
+'use client'
+
+import { useState } from 'react'
 
 export default function Home() {
+  const [url, setUrl] = useState('')
+  const [status, setStatus] = useState<'idle' | 'scraping' | 'analyzing' | 'generating' | 'done' | 'error'>('idle')
+  const [error, setError] = useState('')
+  const [appName, setAppName] = useState('')
+
+  const steps = [
+    { key: 'scraping',   label: 'Reading the website...' },
+    { key: 'analyzing',  label: 'Analyzing design with AI...' },
+    { key: 'generating', label: 'Generating your app...' },
+  ]
+
+  async function handleGenerate(e: React.FormEvent) {
+    e.preventDefault()
+    if (!url.trim()) return
+
+    setError('')
+    setAppName('')
+    setStatus('scraping')
+
+    try {
+      // Fake step progression for UX
+      setTimeout(() => setStatus('analyzing'), 3000)
+      setTimeout(() => setStatus('generating'), 8000)
+
+      const res = await fetch('/api/generate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url: url.trim() }),
+      })
+
+      if (!res.ok) {
+        const data = await res.json()
+        throw new Error(data.error || 'Generation failed')
+      }
+
+      const name = res.headers.get('X-App-Name') || 'your-app'
+      setAppName(name)
+
+      // Trigger download
+      const blob = await res.blob()
+      const link = document.createElement('a')
+      link.href = URL.createObjectURL(blob)
+      link.download = `${name.toLowerCase().replace(/\s+/g, '-')}.zip`
+      link.click()
+
+      setStatus('done')
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Something went wrong')
+      setStatus('error')
+    }
+  }
+
   return (
-    <div className="flex min-h-screen items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex min-h-screen w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the page.tsx file.
+    <main className="min-h-screen bg-[#09090b] text-[#f4f4f5] flex flex-col">
+
+      {/* Nav */}
+      <nav className="border-b border-zinc-800 px-6 py-4 flex items-center justify-between">
+        <span className="font-bold text-lg tracking-tight">SiteForge</span>
+        <span className="text-xs text-zinc-500 uppercase tracking-widest">By Sandoval Solutions</span>
+      </nav>
+
+      {/* Hero */}
+      <div className="flex-1 flex flex-col items-center justify-center px-4 py-20">
+        <div className="max-w-2xl w-full mx-auto text-center">
+
+          <div className="inline-block bg-zinc-900 border border-zinc-800 text-zinc-400 text-xs px-3 py-1 rounded-full mb-6 tracking-wide uppercase">
+            Paste a URL. Get a real app.
+          </div>
+
+          <h1 className="text-5xl font-bold tracking-tight mb-4 leading-tight">
+            Any website.<br />
+            <span className="text-[#3b82f6]">Real native app.</span>
           </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Learning
-            </a>{" "}
-            center.
+
+          <p className="text-zinc-400 text-lg mb-10 leading-relaxed">
+            SiteForge analyzes your website, extracts your brand, and generates
+            a production-ready Expo app — iOS and Android — in under 30 seconds.
           </p>
-        </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={16}
+
+          {/* Input */}
+          <form onSubmit={handleGenerate} className="flex flex-col sm:flex-row gap-3 mb-4">
+            <input
+              type="text"
+              value={url}
+              onChange={(e) => setUrl(e.target.value)}
+              placeholder="https://yoursite.com"
+              className="flex-1 bg-zinc-900 border border-zinc-700 rounded-lg px-4 py-3 text-white placeholder-zinc-600 focus:outline-none focus:border-blue-500 transition-colors"
+              disabled={['scraping', 'analyzing', 'generating'].includes(status)}
             />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
+            <button
+              type="submit"
+              disabled={!url.trim() || ['scraping', 'analyzing', 'generating'].includes(status)}
+              className="bg-blue-600 hover:bg-blue-500 disabled:opacity-40 disabled:cursor-not-allowed text-white font-semibold px-6 py-3 rounded-lg transition-colors whitespace-nowrap"
+            >
+              {['scraping', 'analyzing', 'generating'].includes(status) ? 'Building...' : 'Build My App →'}
+            </button>
+          </form>
+
+          {/* Progress */}
+          {['scraping', 'analyzing', 'generating'].includes(status) && (
+            <div className="mt-6 space-y-2">
+              {steps.map((step) => {
+                const stepIndex = steps.findIndex(s => s.key === status)
+                const thisIndex = steps.findIndex(s => s.key === step.key)
+                const isDone = thisIndex < stepIndex
+                const isActive = step.key === status
+                return (
+                  <div key={step.key} className={`flex items-center gap-3 text-sm px-4 py-2 rounded-lg transition-all
+                    ${isActive ? 'bg-zinc-800 text-white' : isDone ? 'text-zinc-500' : 'text-zinc-700'}`}>
+                    <span className="w-4 h-4 flex items-center justify-center">
+                      {isDone ? '✓' : isActive ? (
+                        <span className="inline-block w-3 h-3 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" />
+                      ) : '○'}
+                    </span>
+                    {step.label}
+                  </div>
+                )
+              })}
+            </div>
+          )}
+
+          {/* Success */}
+          {status === 'done' && (
+            <div className="mt-6 bg-zinc-900 border border-zinc-800 rounded-xl p-6 text-left">
+              <div className="flex items-center gap-2 mb-3">
+                <span className="text-green-400 text-lg">✓</span>
+                <span className="font-semibold text-white">{appName} generated</span>
+              </div>
+              <p className="text-zinc-400 text-sm mb-4">Your ZIP is downloading. To run it:</p>
+              <pre className="bg-zinc-950 rounded-lg p-4 text-xs text-zinc-300 overflow-x-auto">
+{`cd ${appName?.toLowerCase().replace(/\s+/g, '-') || 'your-app'}
+npm install
+npx expo start`}
+              </pre>
+              <p className="text-zinc-500 text-xs mt-3">Scan the QR code with Expo Go on your phone. That's it.</p>
+              <button
+                onClick={() => { setStatus('idle'); setUrl('') }}
+                className="mt-4 text-blue-400 hover:text-blue-300 text-sm transition-colors"
+              >
+                Build another →
+              </button>
+            </div>
+          )}
+
+          {/* Error */}
+          {status === 'error' && (
+            <div className="mt-4 bg-red-950/30 border border-red-900 text-red-400 rounded-lg px-4 py-3 text-sm">
+              {error}
+              <button onClick={() => setStatus('idle')} className="ml-3 text-red-300 hover:text-red-200 underline">Try again</button>
+            </div>
+          )}
+
         </div>
-      </main>
-    </div>
-  );
+      </div>
+
+      {/* How it works */}
+      <div className="border-t border-zinc-800 px-6 py-16">
+        <div className="max-w-3xl mx-auto">
+          <h2 className="text-2xl font-bold text-center mb-10">How it works</h2>
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-6">
+            {[
+              { num: '01', title: 'Paste your URL', desc: 'Drop in any website URL. Public sites work best.' },
+              { num: '02', title: 'AI analyzes it', desc: 'Claude reads your site\'s design, content, and structure. Extracts your brand.' },
+              { num: '03', title: 'Download your app', desc: 'Get a production Expo project. Open in Expo Go instantly. Ship to both stores.' },
+            ].map(step => (
+              <div key={step.num} className="bg-zinc-900 border border-zinc-800 rounded-xl p-6">
+                <div className="text-blue-500 text-sm font-bold mb-3 tracking-widest">{step.num}</div>
+                <div className="font-semibold mb-2">{step.title}</div>
+                <div className="text-zinc-400 text-sm leading-relaxed">{step.desc}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      {/* Footer */}
+      <footer className="border-t border-zinc-800 px-6 py-6 text-center text-zinc-600 text-xs">
+        SiteForge · Sandoval Solutions LLC · Built by Praxis
+      </footer>
+
+    </main>
+  )
 }
