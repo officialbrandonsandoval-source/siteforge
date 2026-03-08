@@ -43,8 +43,10 @@ export default function Home() {
       }
 
       const name = res.headers.get('X-App-Name') || 'your-app'
+      const spec = res.headers.get('X-Spec') || ''
       setAppName(name)
 
+      // Trigger ZIP download
       const blob = await res.blob()
       const link = document.createElement('a')
       link.href = URL.createObjectURL(blob)
@@ -52,6 +54,11 @@ export default function Home() {
       link.click()
 
       setStatus('done')
+
+      // Redirect to preview/deploy page after short delay
+      setTimeout(() => {
+        window.location.href = `/preview?spec=${encodeURIComponent(spec)}`
+      }, 1200)
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Something went wrong')
       setStatus('error')
@@ -217,7 +224,7 @@ export default function Home() {
             <div className="mt-6 rounded-2xl p-[1px]"
               style={{ background: 'linear-gradient(135deg, rgba(34,197,94,0.3), rgba(34,197,94,0.05))' }}>
               <div className="bg-[#0a0a0a] rounded-2xl p-6 text-left">
-                <div className="flex items-center gap-3 mb-4">
+                <div className="flex items-center gap-3 mb-3">
                   <div className="w-8 h-8 rounded-full flex items-center justify-center bg-green-500/10 border border-green-500/20">
                     <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
                       <path d="M2.5 7l3 3 6-6" stroke="#4ade80" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
@@ -225,19 +232,13 @@ export default function Home() {
                   </div>
                   <div>
                     <div className="font-semibold text-white">{appName} is ready</div>
-                    <div className="text-xs text-white/40">ZIP downloaded · Open in Expo Go instantly</div>
+                    <div className="text-xs text-white/40">Code downloaded · Taking you to preview...</div>
                   </div>
                 </div>
-                <div className="bg-black/50 rounded-xl p-4 font-mono text-xs text-white/60 space-y-1 border border-white/5">
-                  <div><span className="text-white/25">$</span> cd {appName?.toLowerCase().replace(/\s+/g, '-') || 'your-app'}</div>
-                  <div><span className="text-white/25">$</span> npm install</div>
-                  <div><span className="text-white/25">$</span> npx expo start</div>
-                  <div className="text-green-400/70 pt-1">✓ Scan QR with Expo Go → running on your phone</div>
+                <div className="flex items-center gap-2 text-xs text-white/25">
+                  <div className="w-3 h-3 border border-white/20 border-t-blue-400 rounded-full animate-spin" />
+                  Loading live preview and deploy options...
                 </div>
-                <button onClick={() => { setStatus('idle'); setUrl('') }}
-                  className="mt-4 text-sm text-blue-400 hover:text-blue-300 transition-colors">
-                  Build another site →
-                </button>
               </div>
             </div>
           )}
