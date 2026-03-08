@@ -1,7 +1,7 @@
 'use client'
 
 import { useSearchParams } from 'next/navigation'
-import { Suspense, useState } from 'react'
+import { Suspense, useState, useEffect } from 'react'
 
 interface AppInfo {
   appName: string
@@ -12,274 +12,274 @@ interface AppInfo {
   screens: number
 }
 
-const deployPaths = [
-  {
-    id: 'ios',
-    icon: '🍎',
-    title: 'App Store',
-    subtitle: 'iOS · iPhone + iPad',
-    cost: '$99/year',
-    time: '~2 hours + 1-3 day review',
-    color: '#3b82f6',
-    steps: [
-      { num: 1, text: 'Create an Apple Developer account at developer.apple.com ($99/yr)' },
-      { num: 2, text: 'Install EAS CLI: npm install -g eas-cli && eas login' },
-      { num: 3, text: 'In your app folder: eas build --platform ios' },
-      { num: 4, text: 'Submit: eas submit --platform ios — EAS handles everything else' },
-      { num: 5, text: 'Apple reviews in 1-3 days. You\'re live.' },
-    ],
-  },
-  {
-    id: 'android',
-    icon: '🤖',
-    title: 'Google Play',
-    subtitle: 'Android · All devices',
-    cost: '$25 one-time',
-    time: '~2 hours + same-day review',
-    color: '#22c55e',
-    steps: [
-      { num: 1, text: 'Create a Google Play Developer account ($25 one-time fee)' },
-      { num: 2, text: 'Install EAS CLI: npm install -g eas-cli && eas login' },
-      { num: 3, text: 'In your app folder: eas build --platform android' },
-      { num: 4, text: 'Submit: eas submit --platform android' },
-      { num: 5, text: 'Google reviews same day. Usually live within hours.' },
-    ],
-  },
-  {
-    id: 'web',
-    icon: '🌐',
-    title: 'Web App',
-    subtitle: 'Browser · Any device',
-    cost: 'Free on Vercel',
-    time: '~15 minutes',
-    color: '#8b5cf6',
-    steps: [
-      { num: 1, text: 'In your app folder: npx expo export --platform web' },
-      { num: 2, text: 'Install Vercel CLI: npm install -g vercel' },
-      { num: 3, text: 'Deploy: vercel dist/ --prod' },
-      { num: 4, text: 'Vercel gives you a free URL like yourapp.vercel.app' },
-      { num: 5, text: 'Add your custom domain in Vercel settings.' },
-    ],
-  },
-  {
-    id: 'personal',
-    icon: '📱',
-    title: 'Personal Use',
-    subtitle: 'Just for you · Instant',
-    cost: 'Free',
-    time: '2 minutes',
-    color: '#f59e0b',
-    steps: [
-      { num: 1, text: 'Download Expo Go from the App Store or Google Play' },
-      { num: 2, text: 'In your app folder: npm install && npx expo start' },
-      { num: 3, text: 'Scan the QR code in the terminal with Expo Go' },
-      { num: 4, text: 'Your app opens instantly on your phone — no App Store needed' },
-      { num: 5, text: 'Keep it running on your phone any time you want.' },
-    ],
-  },
-]
+function QRCode({ value, size = 200 }: { value: string; size?: number }) {
+  const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=${size}x${size}&data=${encodeURIComponent(value)}&bgcolor=000000&color=ffffff&qzone=2`
+  return (
+    <img
+      src={qrUrl}
+      width={size}
+      height={size}
+      alt="QR Code"
+      style={{ borderRadius: 16, display: 'block' }}
+    />
+  )
+}
+
+type DeployPath = 'ios' | 'android' | 'web' | null
 
 function PreviewContent() {
   const params = useSearchParams()
-  const [activeTab, setActiveTab] = useState<string | null>(null)
+  const [deployPath, setDeployPath] = useState<DeployPath>(null)
+  const [submitted, setSubmitted] = useState(false)
+  const [email, setEmail] = useState('')
   const [snackLoaded, setSnackLoaded] = useState(false)
 
   let appInfo: AppInfo | null = null
   try {
     const spec = params.get('spec')
-    if (spec) {
-      appInfo = JSON.parse(Buffer.from(spec, 'base64').toString()) as AppInfo
-    }
+    if (spec) appInfo = JSON.parse(atob(spec.replace(/-/g, '+').replace(/_/g, '/'))) as AppInfo
   } catch { /* ignore */ }
 
-  const snackUrl = appInfo?.snackUrl
+  const snackUrl = params.get('snack') || appInfo?.snackUrl || ''
   const snackEmbedUrl = snackUrl
-    ? `${snackUrl}?platform=web&preview=true&theme=dark`
-    : null
+    ? `https://snack.expo.dev/embedded/${snackUrl.split('/').pop()}?platform=ios&preview=true&theme=dark&hideQueryParams=true`
+    : ''
+  // QR opens the snack in Expo Go directly
+  const snackQrUrl = snackUrl
+    ? snackUrl.replace('https://snack.expo.dev/', 'exp://exp.host/@snack/')
+    : ''
+
+  const primaryColor = appInfo?.primaryColor || '#3b82f6'
+
+  if (submitted) {
+    return (
+      <main style={{ minHeight: '100vh', background: '#000', color: '#fff', fontFamily: "'Inter', -apple-system, sans-serif", display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}>
+        <div style={{ textAlign: 'center', maxWidth: 400 }}>
+          <div style={{ fontSize: 48, marginBottom: 20 }}>🎉</div>
+          <h1 style={{ fontSize: 28, fontWeight: 800, marginBottom: 12, letterSpacing: -0.5 }}>You're on the list</h1>
+          <p style={{ color: 'rgba(255,255,255,0.4)', fontSize: 15, lineHeight: 1.7, marginBottom: 32 }}>
+            We'll reach out within 24 hours to get your {appInfo?.appName || 'app'} submitted to the {deployPath === 'android' ? 'Google Play Store' : 'App Store'}. No technical work required on your end.
+          </p>
+          <button onClick={() => setSubmitted(false)} style={{ color: 'rgba(255,255,255,0.3)', background: 'none', border: 'none', fontSize: 14, cursor: 'pointer', fontFamily: 'inherit' }}>
+            ← Back to preview
+          </button>
+        </div>
+      </main>
+    )
+  }
+
+  if (deployPath) {
+    const isAndroid = deployPath === 'android'
+    return (
+      <main style={{ minHeight: '100vh', background: '#000', color: '#fff', fontFamily: "'Inter', -apple-system, sans-serif" }}>
+        <nav style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '16px 24px', borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
+          <button onClick={() => setDeployPath(null)} style={{ color: 'rgba(255,255,255,0.4)', background: 'none', border: 'none', fontSize: 14, cursor: 'pointer', fontFamily: 'inherit' }}>← Back</button>
+          <span style={{ fontSize: 14, color: 'rgba(255,255,255,0.2)' }}>{appInfo?.appName}</span>
+          <div style={{ width: 60 }} />
+        </nav>
+        <div style={{ maxWidth: 480, margin: '60px auto', padding: '0 24px' }}>
+          <div style={{ fontSize: 40, marginBottom: 20 }}>{isAndroid ? '🤖' : '🍎'}</div>
+          <h1 style={{ fontSize: 32, fontWeight: 900, letterSpacing: -0.8, marginBottom: 8 }}>
+            {isAndroid ? 'Google Play' : 'App Store'}
+          </h1>
+          <p style={{ color: 'rgba(255,255,255,0.4)', fontSize: 15, lineHeight: 1.7, marginBottom: 40 }}>
+            We handle the entire submission — building, signing, uploading, and app review. You just need {isAndroid ? 'a Google account and the $25 one-time developer fee' : 'an Apple ID and the $99/year developer account'}. That's it.
+          </p>
+
+          <div style={{ marginBottom: 32 }}>
+            {[
+              isAndroid ? 'Create a Google Play Developer account ($25 one-time)' : 'Create an Apple Developer account ($99/year)',
+              'Enter your email below — we reach out within 24 hours',
+              'We handle building, signing, and submitting',
+              isAndroid ? 'Live on Google Play within hours' : 'Live on the App Store in 1-3 days',
+            ].map((step, i) => (
+              <div key={i} style={{ display: 'flex', gap: 16, marginBottom: 20 }}>
+                <div style={{ width: 28, height: 28, borderRadius: '50%', background: `${primaryColor}18`, border: `1px solid ${primaryColor}40`, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, fontSize: 12, fontWeight: 700, color: primaryColor }}>
+                  {i + 1}
+                </div>
+                <p style={{ color: 'rgba(255,255,255,0.6)', fontSize: 14, lineHeight: 1.6, margin: 0, paddingTop: 4 }}>{step}</p>
+              </div>
+            ))}
+          </div>
+
+          <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
+            <input
+              type="email"
+              value={email}
+              onChange={e => setEmail(e.target.value)}
+              placeholder="your@email.com"
+              style={{ flex: 1, background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 10, padding: '13px 16px', color: '#fff', fontSize: 15, outline: 'none', fontFamily: 'inherit' }}
+            />
+            <button
+              onClick={() => { if (email.includes('@')) setSubmitted(true) }}
+              style={{ background: primaryColor, border: 'none', borderRadius: 10, padding: '13px 20px', color: '#fff', fontWeight: 700, fontSize: 15, cursor: 'pointer', whiteSpace: 'nowrap', fontFamily: 'inherit' }}
+            >
+              Get it published →
+            </button>
+          </div>
+          <p style={{ fontSize: 12, color: 'rgba(255,255,255,0.2)', textAlign: 'center' }}>
+            {isAndroid ? '$99/mo · cancel anytime' : '$99/mo · includes App Store submission · cancel anytime'}
+          </p>
+        </div>
+      </main>
+    )
+  }
 
   return (
-    <main className="min-h-screen bg-black text-white" style={{ fontFamily: "'Inter', -apple-system, sans-serif" }}>
+    <main style={{ minHeight: '100vh', background: '#000', color: '#fff', fontFamily: "'Inter', -apple-system, sans-serif" }}>
 
       {/* Ambient */}
-      <div className="fixed inset-0 pointer-events-none">
-        <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[600px] h-[400px] opacity-15 rounded-full"
-          style={{ background: `radial-gradient(ellipse, ${appInfo?.primaryColor || '#3b82f6'} 0%, transparent 70%)`, filter: 'blur(80px)' }} />
-      </div>
+      <div style={{ position: 'fixed', top: 0, left: '50%', transform: 'translateX(-50%)', width: 600, height: 400, background: `radial-gradient(ellipse, ${primaryColor}15 0%, transparent 70%)`, filter: 'blur(60px)', pointerEvents: 'none', zIndex: 0 }} />
 
       {/* Nav */}
-      <nav className="relative z-10 flex items-center justify-between px-6 py-4 border-b border-white/5">
-        <a href="/" className="flex items-center gap-2 group">
-          <div className="w-6 h-6 rounded-md flex items-center justify-center"
-            style={{ background: 'linear-gradient(135deg, #3b82f6, #8b5cf6)' }}>
-            <svg width="10" height="10" viewBox="0 0 14 14" fill="none">
-              <path d="M2 2h4v10H2zM8 2h4v4H8zM8 9h4v3H8z" fill="white" />
-            </svg>
-          </div>
-          <span className="font-semibold text-sm group-hover:text-white/70 transition-colors">SiteForge</span>
-        </a>
+      <nav style={{ position: 'relative', zIndex: 10, display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '16px 24px', borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
+        <a href="/" style={{ color: 'rgba(255,255,255,0.3)', fontSize: 14, textDecoration: 'none' }}>← Build another</a>
         {appInfo && (
-          <div className="flex items-center gap-2">
-            <div className="w-2 h-2 rounded-full bg-green-400 animate-pulse" />
-            <span className="text-white/40 text-xs">{appInfo.appName} — ready</span>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <div style={{ width: 7, height: 7, borderRadius: '50%', background: '#4ade80', animation: 'pulse 2s infinite' }} />
+            <span style={{ fontSize: 13, color: 'rgba(255,255,255,0.3)' }}>{appInfo.appName} — ready</span>
           </div>
         )}
+        <div style={{ width: 100 }} />
       </nav>
 
-      <div className="relative z-10 max-w-6xl mx-auto px-6 py-12">
+      <div style={{ position: 'relative', zIndex: 10, maxWidth: 1100, margin: '0 auto', padding: '48px 24px' }}>
 
         {/* Header */}
-        <div className="text-center mb-12">
-          {appInfo ? (
-            <>
-              <div className="inline-flex items-center gap-2 bg-green-500/10 border border-green-500/20 text-green-400 text-xs px-4 py-1.5 rounded-full mb-4">
-                <span>✓</span> App generated — {appInfo.screens} screens
-              </div>
-              <h1 className="text-4xl font-bold tracking-tight mb-3">
-                <span style={{ color: appInfo.primaryColor }}>{appInfo.appName}</span> is ready
-              </h1>
-              <p className="text-white/40 text-lg">{appInfo.tagline}</p>
-            </>
-          ) : (
-            <h1 className="text-4xl font-bold tracking-tight">Your app is ready</h1>
+        <div style={{ textAlign: 'center', marginBottom: 48 }}>
+          <h1 style={{ fontSize: 'clamp(32px, 5vw, 52px)', fontWeight: 900, letterSpacing: -1.5, marginBottom: 12 }}>
+            {appInfo ? (
+              <><span style={{ color: primaryColor }}>{appInfo.appName}</span> is live</>
+            ) : 'Your app is live'}
+          </h1>
+          {appInfo?.tagline && (
+            <p style={{ color: 'rgba(255,255,255,0.35)', fontSize: 17, fontWeight: 300 }}>{appInfo.tagline}</p>
           )}
         </div>
 
-        {/* Preview + Deploy grid */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-16">
+        {/* Main 2-col: preview + phone */}
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 420px', gap: 32, alignItems: 'start' }}>
 
-          {/* Live Preview */}
-          <div className="flex flex-col">
-            <div className="flex items-center justify-between mb-4">
-              <h2 className="font-semibold text-white">Live Preview</h2>
+          {/* Left: Live preview */}
+          <div>
+            <div style={{ marginBottom: 12, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <span style={{ fontSize: 13, color: 'rgba(255,255,255,0.3)', fontWeight: 500 }}>Live preview</span>
               {snackUrl && (
-                <a href={snackUrl} target="_blank"
-                  className="text-xs text-blue-400 hover:text-blue-300 transition-colors border border-blue-500/20 px-3 py-1 rounded-lg">
+                <a href={snackUrl} target="_blank" style={{ fontSize: 12, color: '#60a5fa', textDecoration: 'none' }}>
                   Open full screen ↗
                 </a>
               )}
             </div>
 
-            {snackEmbedUrl ? (
-              <div className="relative rounded-2xl overflow-hidden border border-white/10 bg-[#0a0a0a]" style={{ height: '600px' }}>
-                {!snackLoaded && (
-                  <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 z-10">
-                    <div className="w-8 h-8 border-2 border-white/10 border-t-blue-400 rounded-full animate-spin" />
-                    <span className="text-white/30 text-sm">Loading preview...</span>
-                  </div>
-                )}
-                <iframe
-                  src={snackEmbedUrl}
-                  className="w-full h-full border-0"
-                  allow="geolocation; camera; microphone"
-                  onLoad={() => setSnackLoaded(true)}
-                />
-              </div>
-            ) : (
-              <div className="rounded-2xl border border-white/10 bg-[#0a0a0a] flex flex-col items-center justify-center gap-4 text-center p-12" style={{ height: '600px' }}>
-                <div className="text-5xl mb-2">📱</div>
-                <h3 className="font-semibold text-white">Preview unavailable</h3>
-                <p className="text-white/30 text-sm max-w-xs leading-relaxed">
-                  Your app was generated successfully. Download the code and run it locally to see it on your phone.
-                </p>
-              </div>
-            )}
+            {/* Phone frame */}
+            <div style={{ position: 'relative', background: '#0a0a0a', borderRadius: 32, border: '1px solid rgba(255,255,255,0.08)', overflow: 'hidden', height: 640, boxShadow: '0 40px 80px rgba(0,0,0,0.6)' }}>
+              {/* Notch */}
+              <div style={{ position: 'absolute', top: 0, left: '50%', transform: 'translateX(-50%)', width: 100, height: 24, background: '#000', borderRadius: '0 0 16px 16px', zIndex: 20 }} />
 
-            {/* Phone/web toggle hint */}
-            {snackUrl && (
-              <div className="mt-3 flex items-center gap-3 text-xs text-white/25">
-                <span>💡</span>
-                <span>To see it on your actual phone: open the preview, tap the QR icon, scan with your phone camera</span>
-              </div>
-            )}
+              {snackEmbedUrl ? (
+                <>
+                  {!snackLoaded && (
+                    <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 12, zIndex: 10 }}>
+                      <div style={{ width: 28, height: 28, border: '2px solid rgba(255,255,255,0.1)', borderTop: `2px solid ${primaryColor}`, borderRadius: '50%', animation: 'spin 0.8s linear infinite' }} />
+                      <span style={{ fontSize: 13, color: 'rgba(255,255,255,0.3)' }}>Loading your app…</span>
+                    </div>
+                  )}
+                  <iframe
+                    src={snackEmbedUrl}
+                    style={{ width: '100%', height: '100%', border: 'none' }}
+                    onLoad={() => setSnackLoaded(true)}
+                  />
+                </>
+              ) : (
+                <div style={{ height: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: 32, textAlign: 'center' }}>
+                  <div style={{ fontSize: 48, marginBottom: 16 }}>📱</div>
+                  <p style={{ color: 'rgba(255,255,255,0.3)', fontSize: 14, lineHeight: 1.6 }}>Preview unavailable in browser — scan the QR code to see it on your phone</p>
+                </div>
+              )}
+            </div>
           </div>
 
-          {/* Deploy Options */}
-          <div className="flex flex-col">
-            <h2 className="font-semibold text-white mb-4">
-              {activeTab ? 'How to deploy' : 'How do you want to ship it?'}
-            </h2>
+          {/* Right: QR + Publish */}
+          <div style={{ position: 'sticky', top: 24 }}>
 
-            {!activeTab ? (
-              <div className="grid grid-cols-2 gap-3">
-                {deployPaths.map(path => (
-                  <button
-                    key={path.id}
-                    onClick={() => setActiveTab(path.id)}
-                    className="text-left rounded-2xl p-[1px] transition-all hover:scale-[1.02] active:scale-[0.99]"
-                    style={{ background: `linear-gradient(135deg, ${path.color}33, rgba(255,255,255,0.03))` }}
-                  >
-                    <div className="bg-[#080808] rounded-2xl p-5 h-full">
-                      <div className="text-2xl mb-3">{path.icon}</div>
-                      <div className="font-semibold text-white text-sm mb-1">{path.title}</div>
-                      <div className="text-white/40 text-xs mb-3">{path.subtitle}</div>
-                      <div className="flex flex-col gap-1">
-                        <div className="text-xs" style={{ color: path.color }}>{path.cost}</div>
-                        <div className="text-xs text-white/25">{path.time}</div>
-                      </div>
-                    </div>
-                  </button>
-                ))}
-              </div>
-            ) : (
-              (() => {
-                const path = deployPaths.find(p => p.id === activeTab)!
-                return (
-                  <div className="rounded-2xl p-[1px]"
-                    style={{ background: `linear-gradient(135deg, ${path.color}33, rgba(255,255,255,0.03))` }}>
-                    <div className="bg-[#080808] rounded-2xl p-6">
-                      <div className="flex items-center justify-between mb-6">
-                        <div className="flex items-center gap-3">
-                          <span className="text-2xl">{path.icon}</span>
-                          <div>
-                            <div className="font-semibold text-white">{path.title}</div>
-                            <div className="text-xs text-white/30">{path.cost} · {path.time}</div>
-                          </div>
-                        </div>
-                        <button onClick={() => setActiveTab(null)}
-                          className="text-white/30 hover:text-white/60 transition-colors text-sm">
-                          ← Back
-                        </button>
-                      </div>
-
-                      <div className="space-y-4">
-                        {path.steps.map(step => (
-                          <div key={step.num} className="flex gap-4">
-                            <div className="w-6 h-6 rounded-full flex items-center justify-center shrink-0 mt-0.5 text-xs font-bold"
-                              style={{ background: `${path.color}20`, color: path.color }}>
-                              {step.num}
-                            </div>
-                            <p className="text-white/70 text-sm leading-relaxed">{step.text}</p>
-                          </div>
-                        ))}
-                      </div>
-
-                      {path.id === 'ios' || path.id === 'android' ? (
-                        <div className="mt-6 p-4 rounded-xl bg-white/3 border border-white/5">
-                          <p className="text-white/30 text-xs leading-relaxed">
-                            💡 EAS (Expo Application Services) handles the complex parts — signing certificates,
-                            build infrastructure, and store submission. You just need an account.
-                          </p>
-                        </div>
-                      ) : null}
-                    </div>
+            {/* QR — primary action */}
+            <div style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 24, padding: 28, marginBottom: 16, textAlign: 'center' }}>
+              <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 6 }}>Open on your phone right now</div>
+              <p style={{ fontSize: 12, color: 'rgba(255,255,255,0.3)', marginBottom: 20, lineHeight: 1.6 }}>
+                Point your phone camera at this code
+              </p>
+              <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 16 }}>
+                {snackUrl ? (
+                  <QRCode value={snackUrl} size={160} />
+                ) : (
+                  <div style={{ width: 160, height: 160, background: 'rgba(255,255,255,0.04)', borderRadius: 16, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                    <span style={{ fontSize: 12, color: 'rgba(255,255,255,0.2)' }}>No QR available</span>
                   </div>
-                )
-              })()
-            )}
+                )}
+              </div>
+              <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.18)', lineHeight: 1.6 }}>
+                Works on iPhone and Android.<br />No app download needed to preview.
+              </p>
+            </div>
 
-            {/* Back to build another */}
-            <div className="mt-6 pt-6 border-t border-white/5 flex items-center justify-between">
-              <a href="/" className="text-sm text-white/30 hover:text-white/60 transition-colors">
-                ← Build another site
-              </a>
-              <a href={appInfo?.sourceUrl || '#'} target="_blank"
-                className="text-sm text-blue-400 hover:text-blue-300 transition-colors">
-                View original site ↗
-              </a>
+            {/* Divider */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16 }}>
+              <div style={{ flex: 1, height: 1, background: 'rgba(255,255,255,0.06)' }} />
+              <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.2)', letterSpacing: 1 }}>READY TO PUBLISH?</span>
+              <div style={{ flex: 1, height: 1, background: 'rgba(255,255,255,0.06)' }} />
+            </div>
+
+            {/* Publish buttons */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              <button
+                onClick={() => setDeployPath('ios')}
+                style={{ width: '100%', padding: '14px 20px', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 14, color: '#fff', fontWeight: 600, fontSize: 15, cursor: 'pointer', fontFamily: 'inherit', display: 'flex', alignItems: 'center', justifyContent: 'space-between', transition: 'background 0.15s' }}
+                onMouseEnter={e => (e.currentTarget.style.background = 'rgba(255,255,255,0.08)')}
+                onMouseLeave={e => (e.currentTarget.style.background = 'rgba(255,255,255,0.05)')}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                  <span>🍎</span>
+                  <div style={{ textAlign: 'left' }}>
+                    <div style={{ fontSize: 14, fontWeight: 600 }}>Publish to App Store</div>
+                    <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.3)', fontWeight: 400 }}>We handle everything · $99/mo</div>
+                  </div>
+                </div>
+                <span style={{ color: 'rgba(255,255,255,0.3)', fontSize: 18 }}>›</span>
+              </button>
+
+              <button
+                onClick={() => setDeployPath('android')}
+                style={{ width: '100%', padding: '14px 20px', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 14, color: '#fff', fontWeight: 600, fontSize: 15, cursor: 'pointer', fontFamily: 'inherit', display: 'flex', alignItems: 'center', justifyContent: 'space-between', transition: 'background 0.15s' }}
+                onMouseEnter={e => (e.currentTarget.style.background = 'rgba(255,255,255,0.08)')}
+                onMouseLeave={e => (e.currentTarget.style.background = 'rgba(255,255,255,0.05)')}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                  <span>🤖</span>
+                  <div style={{ textAlign: 'left' }}>
+                    <div style={{ fontSize: 14, fontWeight: 600 }}>Publish to Google Play</div>
+                    <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.3)', fontWeight: 400 }}>We handle everything · $99/mo</div>
+                  </div>
+                </div>
+                <span style={{ color: 'rgba(255,255,255,0.3)', fontSize: 18 }}>›</span>
+              </button>
+            </div>
+
+            {/* Source download — secondary, tiny */}
+            <div style={{ textAlign: 'center', marginTop: 20 }}>
+              <span style={{ fontSize: 12, color: 'rgba(255,255,255,0.15)' }}>
+                Source code downloaded to your Downloads folder
+              </span>
             </div>
           </div>
         </div>
       </div>
+
+      <style>{`
+        @keyframes spin { to { transform: rotate(360deg); } }
+        @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        ::placeholder { color: rgba(255,255,255,0.2); }
+      `}</style>
     </main>
   )
 }
@@ -287,8 +287,9 @@ function PreviewContent() {
 export default function PreviewPage() {
   return (
     <Suspense fallback={
-      <div className="min-h-screen bg-black flex items-center justify-center">
-        <div className="w-8 h-8 border-2 border-white/10 border-t-blue-400 rounded-full animate-spin" />
+      <div style={{ minHeight: '100vh', background: '#000', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        <div style={{ width: 28, height: 28, border: '2px solid rgba(255,255,255,0.1)', borderTop: '2px solid #3b82f6', borderRadius: '50%', animation: 'spin 0.8s linear infinite' }} />
+        <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
       </div>
     }>
       <PreviewContent />
